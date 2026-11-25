@@ -18,6 +18,41 @@
         Nube 24/7 • Funciona Siempre
       </div>
       <h1 class="text-xl font-black text-white">📱 Préstamos Remotos POS</h1>
+      <!-- Editable Local Name / Number Identifier -->
+      <div class="pt-0.5 flex flex-col items-center justify-center">
+        <div id="localDisplayRow" class="flex items-center justify-center">
+          <button
+            id="editLocalBtn"
+            type="button"
+            class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-indigo-950/80 hover:bg-indigo-900/80 border border-indigo-400/50 text-indigo-100 font-black text-sm transition-all cursor-pointer shadow-xs"
+            title="Toca para editar el número o nombre del local"
+          >
+            <span>🏪</span>
+            <span id="localNameText">Poner número o nombre del local</span>
+            <span class="text-xs opacity-80">✏️</span>
+          </button>
+        </div>
+        <div id="localEditRow" class="hidden w-full max-w-xs flex items-center gap-1.5">
+          <input
+            id="localNameInput"
+            type="text"
+            maxlength="60"
+            placeholder="Ej: Local 89"
+            class="flex-1 min-w-0 px-3 py-1.5 bg-slate-800 border-2 border-indigo-400 rounded-xl text-sm font-bold text-white placeholder-slate-400 focus:outline-none"
+          />
+          <button
+            id="saveLocalBtn"
+            type="button"
+            class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black cursor-pointer shrink-0"
+          >Guardar</button>
+          <button
+            id="cancelLocalBtn"
+            type="button"
+            class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold cursor-pointer shrink-0"
+            title="Cancelar"
+          >✕</button>
+        </div>
+      </div>
       <p class="text-xs text-slate-400 leading-relaxed">
         Registra por voz, texto o foto cualquier día, <strong>incluso si el computador del local está apagado</strong>. Todo se sincroniza automáticamente al abrir el POS.
       </p>
@@ -93,18 +128,21 @@
     <!-- Live Sync History -->
     <div class="bg-slate-900 border border-slate-800 p-5 rounded-3xl shadow-2xl space-y-3">
       <div class="flex items-center justify-between">
-        <h2 class="text-xs font-black text-slate-300 uppercase tracking-wider">Registros Recientes</h2>
+        <h2 id="loansListTitle" class="text-xs font-black text-slate-300 uppercase tracking-wider">Préstamos de Hoy (0)</h2>
         <span id="connBadge" class="text-[10px] font-bold text-emerald-400">Conectando...</span>
       </div>
+      <p class="text-[10px] text-slate-400 leading-snug">
+        Los préstamos sincronizados de hoy quedan visibles aquí durante el día y se borran automáticamente en la noche (11:00 PM) para liberar espacio en la nube.
+      </p>
       <div id="loansList" class="space-y-2 text-xs text-slate-400">
-        Cargando historial en la nube...
+        Cargando préstamos de hoy...
       </div>
     </div>
   </div>
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.4.0/firebase-app.js';
-    import { getFirestore, collection, doc, setDoc, onSnapshot, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/11.4.0/firebase-firestore.js';
+    import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/11.4.0/firebase-firestore.js';
 
     const FIREBASE_CONFIG = {"apiKey":"AIzaSyBWIivCf7A7VBsLnDvS033vrzZ7-lEeBB4","authDomain":"gen-lang-client-0675551299.firebaseapp.com","projectId":"gen-lang-client-0675551299","appId":"1:46997151779:web:6037bcacb30b9e61641196","firestoreDatabaseId":"ai-studio-sistemadeinventa-10c85730-da7d-40b1-bb75-4db97c8c7746"};
     const DEFAULT_SYNC_KEY = "pos2l_3syxn4_2026";
@@ -114,6 +152,73 @@
     if (!syncKey || syncKey.length < 8) syncKey = DEFAULT_SYNC_KEY;
     localStorage.setItem('pos_remote_sync_key', syncKey);
     document.getElementById('syncKeyBadge').textContent = syncKey;
+
+    // Editable Local Name / Number Identifier (persisted per syncKey)
+    const LOCAL_NAME_STORAGE_KEY = 'pos_remote_local_name_' + syncKey;
+    const localDisplayRow = document.getElementById('localDisplayRow');
+    const localEditRow = document.getElementById('localEditRow');
+    const editLocalBtn = document.getElementById('editLocalBtn');
+    const localNameText = document.getElementById('localNameText');
+    const localNameInput = document.getElementById('localNameInput');
+    const saveLocalBtn = document.getElementById('saveLocalBtn');
+    const cancelLocalBtn = document.getElementById('cancelLocalBtn');
+
+    let localName = (
+      urlParams.get('local') ||
+      localStorage.getItem(LOCAL_NAME_STORAGE_KEY) ||
+      localStorage.getItem('pos_remote_local_name') ||
+      ''
+    ).trim().slice(0, 60);
+
+    function renderLocalName() {
+      if (localName) {
+        localNameText.textContent = localName;
+        editLocalBtn.className = 'inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-indigo-950/90 hover:bg-indigo-900/90 border border-indigo-400/60 text-indigo-100 font-black text-sm transition-all cursor-pointer shadow-xs';
+        document.title = localName + ' • Préstamos Remotos POS';
+      } else {
+        localNameText.textContent = 'Poner número o nombre del local';
+        editLocalBtn.className = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-dashed border-slate-600 text-slate-300 font-bold text-xs transition-all cursor-pointer';
+        document.title = '📱 Préstamos Remotos POS 24/7';
+      }
+    }
+
+    function openLocalEditor() {
+      localNameInput.value = localName;
+      localDisplayRow.classList.add('hidden');
+      localEditRow.classList.remove('hidden');
+      localNameInput.focus();
+      localNameInput.select();
+    }
+
+    function closeLocalEditor() {
+      localEditRow.classList.add('hidden');
+      localDisplayRow.classList.remove('hidden');
+    }
+
+    function commitLocalName() {
+      localName = localNameInput.value.trim().slice(0, 60);
+      if (localName) {
+        localStorage.setItem(LOCAL_NAME_STORAGE_KEY, localName);
+        localStorage.setItem('pos_remote_local_name', localName);
+      } else {
+        localStorage.removeItem(LOCAL_NAME_STORAGE_KEY);
+      }
+      renderLocalName();
+      closeLocalEditor();
+    }
+
+    editLocalBtn.onclick = openLocalEditor;
+    saveLocalBtn.onclick = commitLocalName;
+    cancelLocalBtn.onclick = closeLocalEditor;
+    localNameInput.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitLocalName();
+      } else if (e.key === 'Escape') {
+        closeLocalEditor();
+      }
+    };
+    renderLocalName();
 
     const app = initializeApp(FIREBASE_CONFIG);
     const db = FIREBASE_CONFIG.firestoreDatabaseId && FIREBASE_CONFIG.firestoreDatabaseId !== '(default)'
@@ -186,32 +291,13 @@
       };
     };
 
-    const NUMBERS = { un:1, uno:1, una:1, dos:2, tres:3, cuatro:4, cinco:5, seis:6, siete:7, ocho:8, nueve:9, diez:10, once:11, doce:12, quince:15, veinte:20 };
-    function parseLoan(raw) {
-      let text = raw.trim();
-      let qty = 1;
-      let store = 'Audio';
-      let dayOffset;
-      if (/\b(anteayer|antier)\b/i.test(text)) { dayOffset = -2; text = text.replace(/\b(anteayer|antier)\b/gi, ' '); }
-      else if (/\bayer\b/i.test(text)) { dayOffset = -1; text = text.replace(/\bayer\b/gi, ' '); }
-      const localMatch =
-        text.match(/(?:prestado\s+a|para\s+el|para\s+la|para|al|a)?\s*local\s*(\d+|[a-záéíóúñ0-9_-]+)/i) ||
-        text.match(/(?:prestado\s+a|para\s+el|para\s+la|para|al|a)\s+([a-záéíóúñ0-9_-]+)/i);
-      if (localMatch) {
-        const val = (localMatch[1] || '').trim();
-        store = /^\d+$/.test(val) ? 'Local ' + val : (val.toLowerCase().startsWith('local') ? val : (localMatch[0].toLowerCase().includes('local') ? 'Local ' + val : val));
-        store = store.charAt(0).toUpperCase() + store.slice(1);
-        text = text.replace(localMatch[0], ' ').replace(/\s+/g, ' ').trim();
+    function detectStoreOnly(raw) {
+      const m = raw.match(/\blocal\s+(\d+|[a-záéíóúñA-Z0-9_-]+)/i);
+      if (m && m[1]) {
+        const val = m[1].trim();
+        return /^\d+$/.test(val) ? 'Local ' + val : 'Local ' + val.charAt(0).toUpperCase() + val.slice(1);
       }
-      const dm = text.match(/^(\d+)\s+(.*)/i);
-      if (dm) { qty = parseInt(dm[1], 10) || 1; text = dm[2]; }
-      else {
-        const wm = text.match(/^([a-záéíóúñ]+)\s+(.*)/i);
-        if (wm && NUMBERS[wm[1].toLowerCase()]) { qty = NUMBERS[wm[1].toLowerCase()]; text = wm[2]; }
-      }
-      text = text.replace(/\b(guardar\s+préstamo|guardar\s+prestamo|guardar|grabar|listo|finalizar)\b/gi, '').replace(/\s+/g, ' ').trim();
-      if (!text) text = raw.trim();
-      return { qty: Math.max(1, qty), desc: text.charAt(0).toUpperCase() + text.slice(1), store, dayOffset };
+      return 'Celular';
     }
 
     function extractCleanTranscript(results) {
@@ -255,45 +341,58 @@
     let isRecording = false;
     let recognition = null;
     let hasAutoSubmitted = false;
+    let isSaving = false;
 
-    async function saveToCloud(manualRaw) {
-      const raw = (manualRaw !== undefined ? manualRaw : inputText.value).trim();
-      if (!raw) return;
+    async function saveToCloud(manualRaw, inputMethod) {
+      if (isSaving) return;
+      const exactText = (manualRaw !== undefined ? manualRaw : inputText.value).trim();
+      if (!exactText) return;
 
+      isSaving = true;
       submitBtn.disabled = true;
       submitBtn.textContent = '☁️ Guardando en la nube...';
       alertBox.classList.add('hidden');
 
       try {
-        const parsed = parseLoan(raw);
+        const store = detectStoreOnly(exactText);
         let ts = Date.now();
-        if (parsed.dayOffset !== undefined) {
-          const d = new Date(); d.setDate(d.getDate() + parsed.dayOffset); d.setHours(12,0,0,0); ts = d.getTime();
-        } else if (loanDateInput.value && loanDateInput.value !== todayStr) {
+        if (loanDateInput.value && loanDateInput.value !== todayStr) {
           const [y,m,d] = loanDateInput.value.split('-').map(Number);
-          ts = new Date(y, m - 1, d, 12, 0, 0).getTime();
+          const nowDate = new Date();
+          ts = new Date(y, m - 1, d, nowDate.getHours(), nowDate.getMinutes(), nowDate.getSeconds(), nowDate.getMilliseconds()).getTime();
         }
 
         const loanId = 'rloan-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
         await setDoc(doc(db, 'sync_rooms', syncKey, 'loans', loanId), {
           id: loanId,
           syncKey,
-          quantity: parsed.qty,
-          description: parsed.desc.slice(0, 480),
-          borrowerStore: parsed.store.slice(0, 110),
-          originStore: 'App Remota Web',
+          quantity: 1,
+          description: exactText.slice(0, 480),
+          borrowerStore: store.slice(0, 110),
+          originStore: (localName || 'App Remota Web').slice(0, 110),
           status: 'PENDIENTE',
-          method: compressedPhotoUrl ? 'photo' : 'voice',
-          voiceTranscript: raw.slice(0, 950),
+          method: compressedPhotoUrl ? 'photo' : (inputMethod || 'manual'),
+          voiceTranscript: exactText.slice(0, 950),
           photoUrl: compressedPhotoUrl.slice(0, 480000),
           notes: 'Enviado desde App Remota 24/7',
-          createdBy: 'Celular Remoto',
+          createdBy: (localName ? 'Celular (' + localName + ')' : 'Celular Remoto').slice(0, 110),
           timestamp: ts,
           syncStatus: 'pending'
         });
 
-        alertBox.className = 'p-4 rounded-2xl text-xs font-bold bg-emerald-950/90 border border-emerald-500 text-emerald-200 shadow-xl';
-        alertBox.innerHTML = '✅ ¡GUARDADO EN LA NUBE 24/7!<br><span class="text-white text-base font-black block mt-1">' + parsed.qty + 'x ' + parsed.desc + ' ➔ "' + parsed.store + '"</span><span class="text-[11px] text-emerald-300 block mt-1">Se descargará automáticamente en tu POS local apenas esté abierto.</span>';
+        alertBox.className = 'p-4 rounded-2xl text-xs font-bold bg-emerald-950/90 border border-emerald-500 text-emerald-200 shadow-xl space-y-1';
+        alertBox.textContent = '';
+        const okHead = document.createElement('div');
+        okHead.textContent = '✅ ¡GUARDADO EN LA NUBE 24/7!';
+        const okText = document.createElement('div');
+        okText.className = 'text-white text-base font-black';
+        okText.textContent = exactText;
+        const okSub = document.createElement('div');
+        okSub.className = 'text-[11px] text-emerald-300 font-normal';
+        okSub.textContent = 'Se descargará automáticamente en tu POS local apenas esté abierto.';
+        alertBox.appendChild(okHead);
+        alertBox.appendChild(okText);
+        alertBox.appendChild(okSub);
         alertBox.classList.remove('hidden');
 
         inputText.value = '';
@@ -306,6 +405,7 @@
         alertBox.textContent = '❌ Error al guardar en la nube: ' + (err?.message || err);
         alertBox.classList.remove('hidden');
       } finally {
+        isSaving = false;
         submitBtn.disabled = false;
         submitBtn.textContent = '☁️ GUARDAR EN LA NUBE 24/7';
       }
@@ -313,7 +413,7 @@
 
     document.getElementById('loanForm').onsubmit = (e) => {
       e.preventDefault();
-      saveToCloud();
+      saveToCloud(undefined, 'manual');
     };
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -340,6 +440,7 @@
           micBtn.className = 'absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl bg-slate-700 text-emerald-400 font-bold flex items-center justify-center text-lg cursor-pointer';
         };
         recognition.onresult = (e) => {
+          if (hasAutoSubmitted) return;
           const trimmed = extractCleanTranscript(e.results);
           if (!trimmed) return;
           inputText.value = trimmed;
@@ -350,8 +451,15 @@
             hasAutoSubmitted = true;
             const clean = trimmed.replace(/\b(guardar\s+préstamo|guardar\s+prestamo|guardar|listo|finalizar)\b/gi, '').replace(/\s+/g, ' ').trim();
             inputText.value = clean;
-            try { recognition.stop(); } catch {}
-            if (clean) saveToCloud(clean);
+            try {
+              recognition.onresult = null;
+              recognition.onend = null;
+              recognition.stop();
+            } catch {}
+            isRecording = false;
+            micBtn.textContent = '🎙️';
+            micBtn.className = 'absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl bg-slate-700 text-emerald-400 font-bold flex items-center justify-center text-lg cursor-pointer';
+            if (clean) saveToCloud(clean, 'voice');
           }
         };
         recognition.start();
@@ -360,30 +468,120 @@
       micBtn.style.display = 'none';
     }
 
-    // Live Cloud History
-    const q = query(collection(db, 'sync_rooms', syncKey, 'loans'), orderBy('timestamp', 'desc'), limit(15));
-    onSnapshot(q, (snap) => {
-      document.getElementById('connBadge').textContent = '🟢 Conectado 24/7';
+    // Live Cloud History (Préstamos de Hoy + Limpieza Nocturna 11:00 PM)
+    const NIGHTLY_CLEANUP_HOUR = 23;
+    const deletingIds = new Set();
+    let latestSnapshotLoans = [];
+
+    function getDayKey(ms) {
+      const d = new Date(Number(ms || 0));
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    }
+
+    function shouldPurgeLoan(l, nowMs) {
+      if (l.syncStatus !== 'synced') return false;
+      const refMs = Number(l.syncedAt || l.timestamp || 0);
+      if (!refMs) return true;
+      if (getDayKey(refMs) < getDayKey(nowMs)) return true;
+      const nowD = new Date(nowMs);
+      if (nowD.getHours() >= NIGHTLY_CLEANUP_HOUR) {
+        const refD = new Date(refMs);
+        if (refD.getHours() < NIGHTLY_CLEANUP_HOUR || (nowMs - refMs) >= 10 * 60 * 1000) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function runNightlyCleanup(items) {
+      const nowMs = Date.now();
+      items.forEach((l) => {
+        if (!l.id || !shouldPurgeLoan(l, nowMs) || deletingIds.has(l.id)) return;
+        deletingIds.add(l.id);
+        deleteDoc(doc(db, 'sync_rooms', syncKey, 'loans', l.id)).catch(() => {
+          deletingIds.delete(l.id);
+        });
+      });
+    }
+
+    function renderTodayLoans(items) {
+      const nowMs = Date.now();
+      const currentDayKey = getDayKey(nowMs);
+      const visible = items.filter((l) => {
+        if (l.syncStatus === 'pending') return true;
+        if (shouldPurgeLoan(l, nowMs)) return false;
+        return getDayKey(l.syncedAt || l.timestamp) === currentDayKey || getDayKey(l.timestamp) === currentDayKey;
+      });
+
+      const titleEl = document.getElementById('loansListTitle');
+      if (titleEl) titleEl.textContent = 'Préstamos de Hoy (' + visible.length + ')';
+
       const container = document.getElementById('loansList');
-      if (snap.empty) {
-        container.innerHTML = '<p class="text-center py-3 italic text-slate-500">Aún no hay registros en esta sala remota.</p>';
+      container.textContent = '';
+
+      if (visible.length === 0) {
+        const p = document.createElement('p');
+        p.className = 'text-center py-3 italic text-slate-500';
+        p.textContent = 'Aún no hay préstamos registrados hoy en esta sala.';
+        container.appendChild(p);
         return;
       }
-      container.innerHTML = '';
-      snap.forEach((docSnap) => {
-        const l = docSnap.data();
+
+      visible.forEach((l) => {
         const isSynced = l.syncStatus === 'synced';
         const div = document.createElement('div');
         div.className = 'p-3 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between gap-2';
-        div.innerHTML = '<div><div class="font-extrabold text-white">(' + l.quantity + ') ' + l.description + '</div><div class="text-[11px] text-emerald-400">Para: ' + l.borrowerStore + ' • ' + new Date(l.timestamp).toLocaleString('es-CO') + '</div></div>'
-          + '<span class="px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ' + (isSynced ? 'bg-emerald-950 text-emerald-300 border border-emerald-700' : 'bg-amber-950 text-amber-300 border border-amber-700') + '">'
-          + (isSynced ? '✅ En POS' : '☁️ En Nube') + '</span>';
+
+        const left = document.createElement('div');
+        left.className = 'min-w-0';
+
+        const descEl = document.createElement('div');
+        descEl.className = 'font-extrabold text-white truncate';
+        descEl.textContent = (Number(l.quantity) > 1 ? '(' + l.quantity + ') ' : '') + (l.description || '');
+
+        const metaEl = document.createElement('div');
+        metaEl.className = 'text-[11px] text-emerald-400';
+        const timeStr = new Date(Number(l.timestamp || Date.now())).toLocaleTimeString('es-CO', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        });
+        metaEl.textContent = 'Para: ' + (l.borrowerStore || 'Audio') + ' • ' + timeStr;
+
+        left.appendChild(descEl);
+        left.appendChild(metaEl);
+
+        const badge = document.createElement('span');
+        badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ' + (isSynced ? 'bg-emerald-950 text-emerald-300 border border-emerald-700' : 'bg-amber-950 text-amber-300 border border-amber-700');
+        badge.textContent = isSynced ? '✅ En POS' : '☁️ En Nube';
+
+        div.appendChild(left);
+        div.appendChild(badge);
         container.appendChild(div);
       });
+    }
+
+    const q = query(collection(db, 'sync_rooms', syncKey, 'loans'), orderBy('timestamp', 'desc'), limit(100));
+    onSnapshot(q, (snap) => {
+      document.getElementById('connBadge').textContent = '🟢 Conectado 24/7';
+      const items = [];
+      snap.forEach((docSnap) => {
+        items.push(docSnap.data());
+      });
+      latestSnapshotLoans = items;
+      runNightlyCleanup(items);
+      renderTodayLoans(items);
     }, (err) => {
       document.getElementById('connBadge').textContent = '⚠️ Error Nube';
       console.error(err);
     });
+
+    setInterval(() => {
+      if (latestSnapshotLoans.length > 0) {
+        runNightlyCleanup(latestSnapshotLoans);
+        renderTodayLoans(latestSnapshotLoans);
+      }
+    }, 5 * 60 * 1000);
   </script>
 </body>
 </html>
